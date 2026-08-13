@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en-AU" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Bar Daily Report &middot; Reporting Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-text">
+        <strong>Bar Daily Report</strong>
+        <small>Nightly performance &amp; forecast variance</small>
+      </span>
+    </div>
+    <div class="topbar-actions">
+      <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
+      <span class="whoami" id="whoami" hidden></span>
+      <button type="button" class="btn-ghost" id="themeToggle" aria-label="Toggle dark mode">
+        <span class="theme-icon" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Sign-in gate. Shown until a verified nomadsworld.com account is present. -->
+<div class="gate" id="authGate" hidden>
+  <div class="gate-card">
+    <span class="gate-mark" aria-hidden="true"></span>
+    <h1>Bar Daily Report</h1>
+    <p id="gateMessage">Sign in with your work Google account to file tonight's report.</p>
+    <div id="gsiButton" class="gate-button"></div>
+    <p class="gate-note" id="gateNote">
+      Requires a <strong>@nomadsworld.com</strong> account. Personal Google
+      accounts cannot submit.
+    </p>
+  </div>
+</div>
+
+<main class="shell">
+
+  <form id="reportForm" novalidate autocomplete="off">
+
+    <div class="layout">
+
+      <!-- ============ FORM COLUMN ============ -->
+      <div class="form-col">
+
+        <!-- 1. Report details -->
+        <section class="card" aria-labelledby="sec-details">
+          <div class="card-head">
+            <h2 id="sec-details">Report details</h2>
+            <p class="card-sub">Select the venue and trading date to load that day&rsquo;s forecast.</p>
+          </div>
+
+          <div class="field">
+            <label for="venue">Your Bar Name <span class="req" aria-hidden="true">*</span></label>
+            <select id="venue" name="venue" required>
+              <option value="">Select a bar&hellip;</option>
+            </select>
+            <p class="hint" id="venueHint"></p>
+          </div>
+
+          <div class="field">
+            <label for="reportDate">Todays Date: <span class="req" aria-hidden="true">*</span></label>
+            <input type="date" id="reportDate" name="reportDate" required>
+            <p class="hint" id="dateEcho"></p>
+          </div>
+
+          <div class="field">
+            <label for="manager">Manager of duty day/night <span class="req" aria-hidden="true">*</span></label>
+            <input type="text" id="manager" name="manager" required placeholder="Full name">
+          </div>
+        </section>
+
+        <!-- 2. Revenue -->
+        <section class="card" aria-labelledby="sec-revenue">
+          <div class="card-head">
+            <h2 id="sec-revenue">Revenue</h2>
+            <p class="card-sub">Enter GST-inclusive figures, as you do now. Beverage revenue is derived
+              (Total Reportable &minus; Food &minus; Door &minus; Merchandise), and revenue is converted
+              to ex GST before it is compared with the forecast.</p>
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label for="totalRevenue">Total Reportable Revenue $: <span class="req" aria-hidden="true">*</span></label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="totalRevenue" name="totalRevenue" class="calc" required placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="foodRevenue">Food Revenue $: <span class="req" aria-hidden="true">*</span></label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="foodRevenue" name="foodRevenue" class="calc" required placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="doorRevenue">Door Revenue $:</label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="doorRevenue" name="doorRevenue" class="calc" placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="merchRevenue">Merchandise Revenue $:</label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="merchRevenue" name="merchRevenue" class="calc" placeholder="0.00">
+              </div>
+            </div>
+          </div>
+
+          <div class="derived-row" id="bevDerived">
+            <span class="derived-label">Beverage Revenue (derived)</span>
+            <span class="derived-value" id="bevRevenueOut">&mdash;</span>
+          </div>
+          <p class="inline-error" id="bevNegativeError" hidden>
+            Beverage revenue is negative &mdash; check that Total Reportable Revenue includes food, door and merchandise.
+          </p>
+        </section>
+
+        <!-- 3. Reconciliation -->
+        <section class="card" aria-labelledby="sec-recon">
+          <div class="card-head">
+            <h2 id="sec-recon">Cash reconciliation</h2>
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label for="cash">Cash $:</label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="cash" name="cash" class="calc" placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="eftpos">Eftpos $:</label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="eftpos" name="eftpos" class="calc" placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="variance">Variance $:</label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="variance" name="variance" class="calc" placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="focs">FOCs $:</label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="focs" name="focs" class="calc" placeholder="0.00">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Promotions & staff -->
+        <section class="card" aria-labelledby="sec-ops">
+          <div class="card-head">
+            <h2 id="sec-ops">Promotions &amp; staffing</h2>
+          </div>
+
+          <div class="field">
+            <label for="promotions">Daily Promotions:</label>
+            <textarea id="promotions" name="promotions" rows="3"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="staffWorking">Staff working:</label>
+            <textarea id="staffWorking" name="staffWorking" rows="3"></textarea>
+          </div>
+        </section>
+
+        <!-- 5. Wages -->
+        <section class="card" aria-labelledby="sec-wages">
+          <div class="card-head">
+            <h2 id="sec-wages">Wages</h2>
+            <p class="card-sub">Wage percentages calculate automatically as you type.</p>
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label for="bevStaffCost">Total BEVERAGE Staff Cost $: <span class="req" aria-hidden="true">*</span></label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="bevStaffCost" name="bevStaffCost" class="calc" required placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="foodStaffCost">Total FOOD Staff Cost $: <span class="req" aria-hidden="true">*</span></label>
+              <div class="money"><span class="money-sym">$</span>
+                <input type="text" inputmode="decimal" id="foodStaffCost" name="foodStaffCost" class="calc" required placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="wageCostPct">Wage Cost % :</label>
+              <div class="money readonly">
+                <input type="text" id="wageCostPct" name="wageCostPct" readonly tabindex="-1" placeholder="&mdash;">
+                <span class="money-sym suffix">%</span>
+              </div>
+              <p class="hint">Auto: (beverage + food wages) &divide; (beverage + food revenue)</p>
+            </div>
+
+            <div class="field">
+              <label for="gpPct">GP % :</label>
+              <div class="money">
+                <input type="text" inputmode="decimal" id="gpPct" name="gpPct" placeholder="0.00">
+                <span class="money-sym suffix">%</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. Forecast variance commentary (injected) -->
+        <section class="card card-flagged" id="varianceCard" hidden aria-labelledby="sec-variance">
+          <div class="card-head">
+            <h2 id="sec-variance">Forecast variance &mdash; commentary required</h2>
+            <p class="card-sub">These metrics fell outside tolerance against forecast. A written explanation is required before you can submit.</p>
+          </div>
+          <div id="varianceComments"></div>
+        </section>
+
+        <!-- 7. Commentary -->
+        <section class="card" aria-labelledby="sec-commentary">
+          <div class="card-head">
+            <h2 id="sec-commentary">Night commentary</h2>
+          </div>
+
+          <div class="field">
+            <label for="description">
+              Description of the Night <span class="req" aria-hidden="true">*</span>
+            </label>
+            <p class="hint hint-above">MUST CONTAIN &mdash; Early, Mid &amp; Late Commentary + Competitor Analysis &amp; Pax Numbers + Group Numbers and Description</p>
+            <textarea id="description" name="description" rows="7" required></textarea>
+            <p class="counter"><span id="descCount">0</span> characters</p>
+          </div>
+
+          <div class="field">
+            <label for="incidents">Incidents/security issues:</label>
+            <div class="notice" id="incidentNotice">
+              <span class="notice-icon" aria-hidden="true">!</span>
+              <p>
+                If any incident took place, ensure the <strong>Incident Register is completed
+                and footage is attached</strong> via the online register:
+                <a href="https://app.securityregisters.com.au/auth/login?redirect=https%3A%2F%2Fapp.securityregisters.com.au%2F"
+                   target="_blank" rel="noopener noreferrer">app.securityregisters.com.au</a>
+              </p>
+            </div>
+            <textarea id="incidents" name="incidents" rows="4"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="irequest">Please list IRequest Incident Number:</label>
+            <div class="notice">
+              <span class="notice-icon" aria-hidden="true">!</span>
+              <p>
+                Log any <strong>non-licensing related incidents, work health and safety
+                matters, identified hazards or maintenance tasks</strong> in IRequest:
+                <a href="https://nomadsworld.mybuildings.com/Core/Pages/Logout.aspx#"
+                   target="_blank" rel="noopener noreferrer">nomadsworld.mybuildings.com</a>
+              </p>
+            </div>
+            <input type="text" id="irequest" name="irequest">
+          </div>
+        </section>
+
+        <!-- 8. Attachments -->
+        <section class="card" aria-labelledby="sec-files">
+          <div class="card-head">
+            <h2 id="sec-files">Attachments</h2>
+            <p class="card-sub">Files upload to Drive as you add them. Max <span id="maxMb">20</span>MB per file.</p>
+          </div>
+
+          <div class="field">
+            <label for="hlReports">Upload all H&amp;L Reports here:</label>
+            <p class="hint hint-above">Cash Balance Report, Till Variance Report, Debtor Profit Report, PLU Profit Report, Revenue Breakdown Report, Time Sales Summary</p>
+            <input type="file" id="hlReports" multiple class="upload" data-slot="hlReports">
+            <ul class="filelist" id="hlReports-list"></ul>
+          </div>
+
+          <div class="field">
+            <label for="additionalDocs">Please upload any additional documentation here:</label>
+            <input type="file" id="additionalDocs" multiple class="upload" data-slot="additionalDocs">
+            <ul class="filelist" id="additionalDocs-list"></ul>
+          </div>
+
+          <div class="field">
+            <label for="cashUp">Please upload Bar Cash Up here (if using excel):</label>
+            <input type="file" id="cashUp" multiple class="upload" data-slot="cashUp">
+            <ul class="filelist" id="cashUp-list"></ul>
+          </div>
+        </section>
+
+        <!-- Submit -->
+        <section class="card card-submit">
+          <div id="formErrors" class="form-errors" hidden role="alert"></div>
+          <button type="submit" class="btn-primary" id="submitBtn">
+            <span class="btn-label">Submit daily report</span>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+          <p class="submit-note">Data is written to the existing Bar Daily Report response sheet. Nothing is stored in your browser after submission.</p>
+        </section>
+
+      </div>
+
+      <!-- ============ LIVE PANEL ============ -->
+      <aside class="panel-col">
+        <div class="panel" id="livePanel">
+
+          <div class="panel-head">
+            <h2>Live performance</h2>
+            <span class="panel-venue" id="panelVenue">No venue selected</span>
+          </div>
+
+          <!-- Calculated metrics -->
+          <div class="tile-group" aria-labelledby="tg-calc">
+            <h3 class="tile-group-title" id="tg-calc">Calculated</h3>
+            <div class="tiles">
+              <div class="tile" id="tile-bevWage">
+                <span class="tile-label">Beverage wage %</span>
+                <span class="tile-value">&mdash;</span>
+                <span class="tile-sub"></span>
+              </div>
+              <div class="tile" id="tile-foodWage">
+                <span class="tile-label">Food wage %</span>
+                <span class="tile-value">&mdash;</span>
+                <span class="tile-sub"></span>
+              </div>
+              <div class="tile" id="tile-totalWage">
+                <span class="tile-label">Total wage %</span>
+                <span class="tile-value">&mdash;</span>
+                <span class="tile-sub"></span>
+              </div>
+              <div class="tile" id="tile-focPct">
+                <span class="tile-label">FOC %</span>
+                <span class="tile-value">&mdash;</span>
+                <span class="tile-sub"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Forecast comparison -->
+          <div class="tile-group" aria-labelledby="tg-fc">
+            <h3 class="tile-group-title" id="tg-fc">
+              vs Forecast
+              <span class="fc-state" id="forecastState">select venue &amp; date</span>
+            </h3>
+            <div id="forecastRows" class="fc-rows"></div>
+          </div>
+
+          <div class="panel-foot">
+            <div class="legend" aria-label="Flag legend">
+              <span class="legend-item"><span class="dot dot-good" aria-hidden="true"></span>On or better than forecast</span>
+              <span class="legend-item"><span class="dot dot-warning" aria-hidden="true"></span>Slightly off &mdash; no comment needed</span>
+              <span class="legend-item"><span class="dot dot-critical" aria-hidden="true"></span>Outside tolerance &mdash; comment required</span>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+
+    </div>
+  </form>
+
+  <!-- Success state -->
+  <div class="success" id="successPane" hidden>
+    <div class="success-card">
+      <span class="success-icon" aria-hidden="true">&#10003;</span>
+      <h2>Report submitted</h2>
+      <p id="successDetail"></p>
+      <button type="button" class="btn-primary" id="newReportBtn">Start another report</button>
+    </div>
+  </div>
+
+</main>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="assets/config.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

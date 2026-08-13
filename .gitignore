@@ -1,0 +1,25 @@
+# --- Kept out of the published repo -----------------------------------------
+# Code.gs lists the response and forecast spreadsheet IDs, so it is not
+# published. It is version-controlled in Apps Script itself; `clasp pull`
+# retrieves it. If this repo is ever made private, these can be re-included.
+apps-script/
+
+# Internal operations doc: deployment ids, GST decisions, threshold rationale,
+# venue-to-workbook mapping.
+OPERATIONS.md
+
+# Ops tooling that embeds the deployment URL.
+verify-endpoint.sh
+
+# --- clasp -------------------------------------------------------------------
+.clasprc.json
+.clasp.json
+
+# --- local tooling config ----------------------------------------------------
+.claude/
+.serena/
+
+# --- OS / editor noise -------------------------------------------------------
+Thumbs.db
+.DS_Store
+node_modules/
