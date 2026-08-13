@@ -36,7 +36,7 @@ window.PORTAL_CONFIG = {
      Set enabled:false only for local development. */
   auth: {
     enabled: true,
-    clientId: 'PASTE_OAUTH_WEB_CLIENT_ID_HERE',
+    clientId: '502160935588-21v9r0sbtqmb34thtgkelb8f0qiq3dqm.apps.googleusercontent.com',
     allowedDomain: 'nomadsworld.com'
   },
 
