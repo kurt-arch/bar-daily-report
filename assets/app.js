@@ -619,17 +619,53 @@
         gateError('Could not load Google Sign-In. Check your connection and reload.');
         return;
       }
+      /* auto_select is deliberately off. With it on, a browser holding a
+         personal Google session signs in silently, gets rejected for the wrong
+         domain, and the manager is stranded with no way to choose another
+         account. Let them pick. */
       google.accounts.id.initialize({
         client_id: a.clientId,
         callback: onCredential,
-        auto_select: true,
+        auto_select: false,
         cancel_on_tap_outside: false
       });
-      google.accounts.id.renderButton($('gsiButton'), {
-        theme: 'outline', size: 'large', text: 'signin_with', width: 280
-      });
-      google.accounts.id.prompt();
+      renderSignInButton();
     });
+  }
+
+  function renderSignInButton() {
+    var host = $('gsiButton');
+    host.innerHTML = '';
+    google.accounts.id.renderButton(host, {
+      theme: 'outline', size: 'large', text: 'signin_with', width: 280
+    });
+  }
+
+  /** Escape hatch after a wrong-account rejection. */
+  function offerAccountSwitch(rejectedEmail) {
+    try { google.accounts.id.disableAutoSelect(); } catch (e) { /* noop */ }
+
+    var note = $('gateNote');
+    note.innerHTML = '';
+
+    var msg = document.createElement('span');
+    msg.innerHTML = rejectedEmail
+      ? 'Signed in to Google as <strong>' + esc(rejectedEmail) + '</strong>. ' +
+        'Choose your work account below, or switch account in Google first.'
+      : 'Choose your <strong>@' + esc(CFG.auth.allowedDomain) + '</strong> account.';
+    note.appendChild(msg);
+
+    var link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'gate-switch';
+    link.textContent = 'Use a different Google account';
+    link.addEventListener('click', function () {
+      window.open('https://accounts.google.com/AccountChooser?continue=' +
+        encodeURIComponent(window.location.href), '_blank', 'noopener');
+    });
+    note.appendChild(link);
+
+    renderSignInButton();
   }
 
   function waitForGsi(cb) {
@@ -650,9 +686,8 @@
 
     /* Fail fast with a clear message. The server checks this again. */
     if (domain && String(claims.hd || '').toLowerCase() !== domain) {
-      gateError('That account (' + (claims.email || 'unknown') + ') is not a @' +
-        domain + ' account, so it cannot file reports. Sign in with your work account.');
-      try { google.accounts.id.disableAutoSelect(); } catch (e) { /* noop */ }
+      gateError('That is not a @' + domain + ' account, so it cannot file reports.');
+      offerAccountSwitch(claims.email);
       return;
     }
 
