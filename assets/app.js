@@ -91,6 +91,7 @@
 
   var state = {
     idToken: null,        // verified Google ID token, when the gate is enabled
+    accessToken: null,    // fallback popup-flow token, verified server-side
     user: null,           // { email, name }
     forecast: null,       // forecast row for the selected venue+date, or null
     forecastStatus: 'idle', // idle | loading | ready | none | error | unsupported
@@ -630,8 +631,82 @@
         cancel_on_tap_outside: false
       });
       renderSignInButton();
+      renderFallbackSignIn();
     });
   }
+
+  /**
+   * Fallback sign-in. The button above uses Google's ID-token flow, which
+   * depends on third-party cookies and fails silently when they are blocked —
+   * the account chooser appears, then nothing happens. This is an ordinary
+   * OAuth popup, which is unaffected by that, and yields an access token the
+   * backend verifies against Google instead of a JWT.
+   */
+  function renderFallbackSignIn() {
+    if (!window.google || !google.accounts || !google.accounts.oauth2) return;
+
+    var host = $('gateNote');
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'gate-switch';
+    btn.textContent = 'Trouble signing in? Use the popup instead';
+    host.appendChild(btn);
+
+    var client = google.accounts.oauth2.initTokenClient({
+      client_id: CFG.auth.clientId,
+      scope: 'openid email profile',
+      callback: function (resp) {
+        clearSignInWatchdog();
+        if (!resp || !resp.access_token) {
+          gateError('Sign-in was cancelled or returned no token.');
+          return;
+        }
+        state.accessToken = resp.access_token;
+        verifyWithBackend();
+      },
+      error_callback: function (err) {
+        clearSignInWatchdog();
+        console.error('[portal] popup sign-in failed', err);
+        gateError('Popup sign-in failed: ' + ((err && err.type) || 'unknown') +
+          '. If a popup was blocked, allow popups for this site and retry.');
+      }
+    });
+
+    btn.addEventListener('click', function () {
+      startSignInWatchdog();
+      client.requestAccessToken();
+    });
+  }
+
+  /** Confirms the access token with the backend, which owns the domain check. */
+  function verifyWithBackend() {
+    var msg = $('gateMessage');
+    msg.textContent = 'Checking your account…';
+    msg.classList.remove('gate-error');
+
+    postJSON({ action: 'whoami' })
+      .then(function (res) {
+        if (res && res.ok && res.email) {
+          state.user = { email: res.email, name: res.name || '' };
+          var who = $('whoami');
+          who.hidden = false;
+          who.textContent = res.email;
+          var mgr = $('manager');
+          if (!mgr.value.trim() && res.name) mgr.value = res.name;
+          showApp();
+        } else {
+          state.accessToken = null;
+          gateError((res && res.error) || 'That account cannot file reports.');
+          showTroubleshooting();
+        }
+      })
+      .catch(function (err) {
+        state.accessToken = null;
+        gateError('Could not reach the server to confirm sign-in: ' + err.message);
+      });
+  }
+
+  var signInWatchdog = null;
 
   function renderSignInButton() {
     var host = $('gsiButton');
@@ -639,6 +714,44 @@
     google.accounts.id.renderButton(host, {
       theme: 'outline', size: 'large', text: 'signin_with', width: 280
     });
+
+    /* The button lives in a Google iframe, so its click is not observable
+       directly. Capturing on the host tells us the attempt started; if no
+       credential arrives, say so instead of appearing to hang. */
+    host.addEventListener('click', startSignInWatchdog, true);
+  }
+
+  function startSignInWatchdog() {
+    clearSignInWatchdog();
+    signInWatchdog = setTimeout(function () {
+      if (state.idToken) return;
+      console.warn('[portal] no credential 20s after sign-in was started');
+      gateError('Sign-in did not complete. Google returned no account details.');
+      showTroubleshooting();
+    }, 20000);
+  }
+
+  function clearSignInWatchdog() {
+    if (signInWatchdog) { clearTimeout(signInWatchdog); signInWatchdog = null; }
+  }
+
+  /** Shown only when sign-in stalls, so the manager is not left staring. */
+  function showTroubleshooting() {
+    var note = $('gateNote');
+    note.innerHTML =
+      '<strong>Most likely causes</strong><br>' +
+      '1. Third-party cookies are blocked in this browser — the usual cause. ' +
+      'Allow them for <em>accounts.google.com</em>, or try a different browser.<br>' +
+      '2. This Google account is not in the ' + esc(CFG.auth.allowedDomain) +
+      ' workspace.<br>' +
+      '3. The sign-in was cancelled or the popup was blocked.';
+
+    var retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'gate-switch';
+    retry.textContent = 'Try again';
+    retry.addEventListener('click', function () { window.location.reload(); });
+    note.appendChild(retry);
   }
 
   /** Escape hatch after a wrong-account rejection. */
@@ -678,6 +791,19 @@
   }
 
   function onCredential(response) {
+    clearSignInWatchdog();
+    try {
+      handleCredential(response);
+    } catch (err) {
+      /* A throw in here is invisible otherwise: the popup closes and nothing
+         happens, which is indistinguishable from the callback never firing. */
+      console.error('[portal] sign-in callback failed', err);
+      gateError('Sign-in failed while processing the response: ' +
+        (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  function handleCredential(response) {
     var token = response && response.credential;
     if (!token) { gateError('No credential returned. Try again.'); return; }
 
@@ -734,6 +860,7 @@
 
   function postJSON(payload) {
     if (state.idToken) payload.idToken = state.idToken;
+    if (state.accessToken) payload.accessToken = state.accessToken;
     return fetch(CFG.endpoint, {
       method: 'POST',
       /* text/plain keeps this a "simple" request: no CORS preflight, which
@@ -837,7 +964,7 @@
       errors.push('Files are still uploading — wait for them to finish.');
     }
 
-    if (CFG.auth && CFG.auth.enabled && !state.idToken) {
+    if (CFG.auth && CFG.auth.enabled && !state.idToken && !state.accessToken) {
       errors.push('You are not signed in. Reload and sign in with your work Google account.');
     }
 
