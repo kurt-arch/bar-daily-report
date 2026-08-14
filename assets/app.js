@@ -684,8 +684,13 @@
     }
 
     state.accessToken = params.access_token;
-    $('authGate').hidden = false;
-    document.querySelector('.shell').style.visibility = 'hidden';
+
+    /* Show the form straight away and verify in the background. Apps Script
+       cold starts can take the better part of a minute, and a blocking splash
+       is indistinguishable from a hang. Nothing is trusted client-side: every
+       write is checked server-side, and a failed check closes the form again. */
+    showApp();
+    setAccountChip('checking…');
     verifyWithBackend();
     return 'pending';
   }
@@ -713,11 +718,24 @@
     $('gsiButton').appendChild(primary);
 
     stampBuild();
+    warmBackend();
+  }
+
+  /**
+   * Apps Script suspends idle instances, and the first call afterwards can take
+   * the better part of a minute. Waking it now means the instance is usually
+   * warm by the time the manager returns from Google.
+   */
+  function warmBackend() {
+    try {
+      fetch(CFG.endpoint + '?action=ping', { method: 'GET', mode: 'cors' })
+        .catch(function () { /* best effort only */ });
+    } catch (e) { /* noop */ }
   }
 
   /* Always visible: a cached build is otherwise indistinguishable from a
      current one, and silently explains away every fix. */
-  var BUILD = 'v8';
+  var BUILD = 'v9';
 
   function stampBuild() {
     var tag = document.createElement('span');
@@ -727,19 +745,17 @@
   }
 
   /** Confirms the access token with the backend, which owns the domain check. */
-  function verifyWithBackend() {
-    var msg = $('gateMessage');
-    msg.classList.remove('gate-error');
+  function setAccountChip(text) {
+    var who = $('whoami');
+    who.hidden = false;
+    who.textContent = text;
+  }
 
-    /* A live counter distinguishes "still working" from "wedged", which a
-       static message cannot — and puts the elapsed time in any screenshot. */
+  function verifyWithBackend() {
     var started = Date.now();
     var ticker = setInterval(function () {
-      msg.textContent = 'Checking your account… (' +
-        Math.round((Date.now() - started) / 1000) + 's)';
+      setAccountChip('checking… (' + Math.round((Date.now() - started) / 1000) + 's)');
     }, 1000);
-    msg.textContent = 'Checking your account… (0s)';
-
     var stop = function () { clearInterval(ticker); };
 
     postJSON({ action: 'whoami' })
@@ -747,13 +763,12 @@
       .then(function (res) {
         if (res && res.ok && res.email) {
           state.user = { email: res.email, name: res.name || '' };
-          var who = $('whoami');
-          who.hidden = false;
-          who.textContent = res.email;
+          setAccountChip(res.email);
+          $('whoami').title = 'Signed in as ' + res.email;
           var mgr = $('manager');
           if (!mgr.value.trim() && res.name) mgr.value = res.name;
-          showApp();
         } else {
+          $('whoami').hidden = true;
           state.accessToken = null;
           gateError((res && res.error) || 'That account cannot file reports.');
           offerRetry();
@@ -763,8 +778,9 @@
         state.accessToken = null;
         console.error('[portal] account check failed', err);
         gateError('Could not confirm sign-in.');
+        $('whoami').hidden = true;
         offerRetry(
-          'build v7\n' +
+          'build ' + BUILD + '\n' +
           'error: ' + (err && err.name ? err.name + ' — ' : '') +
             (err && err.message ? err.message : String(err)) + '\n' +
           'endpoint: ' + String(CFG.endpoint).slice(0, 60) + '…'
