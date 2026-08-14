@@ -559,16 +559,25 @@ input[type="file"]:hover { border-color: var(--accent); }
 }
 
 .panel {
-  max-height: calc(100vh - 96px);
+  /* Taller than the viewport on smaller screens once five forecast rows are
+     showing, so it must scroll. Do not reintroduce `overflow: hidden` here —
+     it resets overflow-y and silently clips the bottom of the panel. */
+  max-height: calc(100vh - 90px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
-  overflow: hidden;
 }
 
+/* Header and legend stay put while the metrics scroll between them, so the
+   venue and the flag key are never scrolled out of reach. */
 .panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 16px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
@@ -705,16 +714,26 @@ input[type="file"]:hover { border-color: var(--accent); }
 
 .fc-nums b { font-weight: 650; color: var(--text-primary); }
 
-.panel-foot { padding: 14px 18px; }
+.panel-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 11px 18px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+}
 
-.legend { display: flex; flex-direction: column; gap: 6px; }
+/* Wraps to one or two lines rather than three fixed rows, which keeps roughly
+   30px of the panel for the metrics themselves. */
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 11.5px;
+  gap: 6px;
+  font-size: 11px;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
