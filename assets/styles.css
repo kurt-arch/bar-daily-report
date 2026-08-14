@@ -92,6 +92,12 @@
 
 * { box-sizing: border-box; }
 
+/* The UA stylesheet's [hidden] { display: none } loses to ANY author rule that
+   sets display — a class as ordinary as `.gate { display: grid }` silently
+   defeats it, leaving an element marked hidden fully visible. Several overlays
+   here are grid, so state this once, authoritatively. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;

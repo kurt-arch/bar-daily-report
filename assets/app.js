@@ -735,7 +735,7 @@
 
   /* Always visible: a cached build is otherwise indistinguishable from a
      current one, and silently explains away every fix. */
-  var BUILD = 'v9';
+  var BUILD = 'v10';
 
   function stampBuild() {
     var tag = document.createElement('span');
