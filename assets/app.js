@@ -90,8 +90,7 @@
   /* ------------------------------------------------------------------ state */
 
   var state = {
-    idToken: null,        // verified Google ID token, when the gate is enabled
-    accessToken: null,    // fallback popup-flow token, verified server-side
+    accessToken: null,    // Google OAuth token, verified server-side
     user: null,           // { email, name }
     forecast: null,       // forecast row for the selected venue+date, or null
     forecastStatus: 'idle', // idle | loading | ready | none | error | unsupported
@@ -603,6 +602,87 @@
    * Apps Script on every write, so removing this overlay in devtools achieves
    * nothing. Decoding here is display-only — never trust it for authorisation.
    */
+  /** The page URL with no query or fragment — must match the registered URI. */
+  function redirectUri() {
+    return window.location.origin + window.location.pathname;
+  }
+
+  /**
+   * Primary sign-in: a top-level redirect to Google and back. No popup and no
+   * postMessage, so Cross-Origin-Opener-Policy cannot interfere — which it does
+   * on GitHub Pages, where response headers cannot be set to relax it.
+   */
+  function beginRedirectSignIn() {
+    var nonce = String(Math.random()).slice(2) + Date.now().toString(36);
+    try { sessionStorage.setItem('portal.authState', nonce); } catch (e) { /* noop */ }
+
+    var p = {
+      client_id: CFG.auth.clientId,
+      redirect_uri: redirectUri(),
+      response_type: 'token',
+      scope: 'openid email profile',
+      state: nonce,
+      prompt: 'select_account',
+      hd: CFG.auth.allowedDomain || ''
+    };
+    var qs = Object.keys(p).filter(function (k) { return p[k]; })
+      .map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(p[k]); })
+      .join('&');
+
+    window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + qs;
+  }
+
+  /**
+   * Handles the return leg. Returns 'pending' while the token is being checked,
+   * 'error' if Google refused, or null when this is an ordinary page load.
+   */
+  function consumeAuthRedirect() {
+    var hash = window.location.hash || '';
+    if (hash.length < 2) return null;
+
+    var params = {};
+    hash.slice(1).split('&').forEach(function (pair) {
+      var i = pair.indexOf('=');
+      if (i > 0) params[decodeURIComponent(pair.slice(0, i))] = decodeURIComponent(pair.slice(i + 1));
+    });
+
+    /* Clear the fragment immediately so the token is not left in the address
+       bar or in history. Fragments are never sent to a server. */
+    var clean = function () {
+      try { history.replaceState(null, '', redirectUri()); } catch (e) { window.location.hash = ''; }
+    };
+
+    if (params.error) {
+      clean();
+      $('authGate').hidden = false;
+      document.querySelector('.shell').style.visibility = 'hidden';
+      gateError('Google refused the sign-in: ' + params.error +
+        (params.error_description ? ' — ' + params.error_description : ''));
+      return 'error';
+    }
+
+    if (!params.access_token) return null;
+
+    var expected;
+    try { expected = sessionStorage.getItem('portal.authState'); } catch (e) { expected = null; }
+    try { sessionStorage.removeItem('portal.authState'); } catch (e) { /* noop */ }
+
+    clean();
+
+    if (expected && params.state !== expected) {
+      $('authGate').hidden = false;
+      document.querySelector('.shell').style.visibility = 'hidden';
+      gateError('Sign-in could not be verified (state mismatch). Please try again.');
+      return 'error';
+    }
+
+    state.accessToken = params.access_token;
+    $('authGate').hidden = false;
+    document.querySelector('.shell').style.visibility = 'hidden';
+    verifyWithBackend();
+    return 'pending';
+  }
+
   function initAuth() {
     var a = CFG.auth || {};
     if (!a.enabled) { showApp(); return; }
@@ -612,70 +692,18 @@
       return;
     }
 
+    /* Returning from Google takes priority over rendering the gate. */
+    if (consumeAuthRedirect()) return;
+
     $('authGate').hidden = false;
     document.querySelector('.shell').style.visibility = 'hidden';
 
-    waitForGsi(function (ok) {
-      if (!ok) {
-        gateError('Could not load Google Sign-In. Check your connection and reload.');
-        return;
-      }
-      /* auto_select is deliberately off. With it on, a browser holding a
-         personal Google session signs in silently, gets rejected for the wrong
-         domain, and the manager is stranded with no way to choose another
-         account. Let them pick. */
-      google.accounts.id.initialize({
-        client_id: a.clientId,
-        callback: onCredential,
-        auto_select: false,
-        cancel_on_tap_outside: false
-      });
-      renderSignInButton();
-      renderFallbackSignIn();
-    });
-  }
-
-  /**
-   * Fallback sign-in. The button above uses Google's ID-token flow, which
-   * depends on third-party cookies and fails silently when they are blocked —
-   * the account chooser appears, then nothing happens. This is an ordinary
-   * OAuth popup, which is unaffected by that, and yields an access token the
-   * backend verifies against Google instead of a JWT.
-   */
-  function renderFallbackSignIn() {
-    if (!window.google || !google.accounts || !google.accounts.oauth2) return;
-
-    var host = $('gateNote');
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'gate-switch';
-    btn.textContent = 'Trouble signing in? Use the popup instead';
-    host.appendChild(btn);
-
-    var client = google.accounts.oauth2.initTokenClient({
-      client_id: CFG.auth.clientId,
-      scope: 'openid email profile',
-      callback: function (resp) {
-        clearSignInWatchdog();
-        if (!resp || !resp.access_token) {
-          gateError('Sign-in was cancelled or returned no token.');
-          return;
-        }
-        state.accessToken = resp.access_token;
-        verifyWithBackend();
-      },
-      error_callback: function (err) {
-        clearSignInWatchdog();
-        console.error('[portal] popup sign-in failed', err);
-        gateError('Popup sign-in failed: ' + ((err && err.type) || 'unknown') +
-          '. If a popup was blocked, allow popups for this site and retry.');
-      }
-    });
-
-    btn.addEventListener('click', function () {
-      startSignInWatchdog();
-      client.requestAccessToken();
-    });
+    var primary = document.createElement('button');
+    primary.type = 'button';
+    primary.className = 'btn-primary gate-primary';
+    primary.textContent = 'Sign in with Google';
+    primary.addEventListener('click', beginRedirectSignIn);
+    $('gsiButton').appendChild(primary);
   }
 
   /** Confirms the access token with the backend, which owns the domain check. */
@@ -706,133 +734,6 @@
       });
   }
 
-  var signInWatchdog = null;
-
-  function renderSignInButton() {
-    var host = $('gsiButton');
-    host.innerHTML = '';
-    google.accounts.id.renderButton(host, {
-      theme: 'outline', size: 'large', text: 'signin_with', width: 280
-    });
-
-    /* The button lives in a Google iframe, so its click is not observable
-       directly. Capturing on the host tells us the attempt started; if no
-       credential arrives, say so instead of appearing to hang. */
-    host.addEventListener('click', startSignInWatchdog, true);
-  }
-
-  function startSignInWatchdog() {
-    clearSignInWatchdog();
-    signInWatchdog = setTimeout(function () {
-      if (state.idToken) return;
-      console.warn('[portal] no credential 20s after sign-in was started');
-      gateError('Sign-in did not complete. Google returned no account details.');
-      showTroubleshooting();
-    }, 20000);
-  }
-
-  function clearSignInWatchdog() {
-    if (signInWatchdog) { clearTimeout(signInWatchdog); signInWatchdog = null; }
-  }
-
-  /** Shown only when sign-in stalls, so the manager is not left staring. */
-  function showTroubleshooting() {
-    var note = $('gateNote');
-    note.innerHTML =
-      '<strong>Most likely causes</strong><br>' +
-      '1. Third-party cookies are blocked in this browser — the usual cause. ' +
-      'Allow them for <em>accounts.google.com</em>, or try a different browser.<br>' +
-      '2. This Google account is not in the ' + esc(CFG.auth.allowedDomain) +
-      ' workspace.<br>' +
-      '3. The sign-in was cancelled or the popup was blocked.';
-
-    var retry = document.createElement('button');
-    retry.type = 'button';
-    retry.className = 'gate-switch';
-    retry.textContent = 'Try again';
-    retry.addEventListener('click', function () { window.location.reload(); });
-    note.appendChild(retry);
-  }
-
-  /** Escape hatch after a wrong-account rejection. */
-  function offerAccountSwitch(rejectedEmail) {
-    try { google.accounts.id.disableAutoSelect(); } catch (e) { /* noop */ }
-
-    var note = $('gateNote');
-    note.innerHTML = '';
-
-    var msg = document.createElement('span');
-    msg.innerHTML = rejectedEmail
-      ? 'Signed in to Google as <strong>' + esc(rejectedEmail) + '</strong>. ' +
-        'Choose your work account below, or switch account in Google first.'
-      : 'Choose your <strong>@' + esc(CFG.auth.allowedDomain) + '</strong> account.';
-    note.appendChild(msg);
-
-    var link = document.createElement('button');
-    link.type = 'button';
-    link.className = 'gate-switch';
-    link.textContent = 'Use a different Google account';
-    link.addEventListener('click', function () {
-      window.open('https://accounts.google.com/AccountChooser?continue=' +
-        encodeURIComponent(window.location.href), '_blank', 'noopener');
-    });
-    note.appendChild(link);
-
-    renderSignInButton();
-  }
-
-  function waitForGsi(cb) {
-    var tries = 0;
-    (function poll() {
-      if (window.google && google.accounts && google.accounts.id) return cb(true);
-      if (++tries > 60) return cb(false);
-      setTimeout(poll, 100);
-    })();
-  }
-
-  function onCredential(response) {
-    clearSignInWatchdog();
-    try {
-      handleCredential(response);
-    } catch (err) {
-      /* A throw in here is invisible otherwise: the popup closes and nothing
-         happens, which is indistinguishable from the callback never firing. */
-      console.error('[portal] sign-in callback failed', err);
-      gateError('Sign-in failed while processing the response: ' +
-        (err && err.message ? err.message : String(err)));
-    }
-  }
-
-  function handleCredential(response) {
-    var token = response && response.credential;
-    if (!token) { gateError('No credential returned. Try again.'); return; }
-
-    var claims = decodeJwtPayload(token);
-    var domain = (CFG.auth.allowedDomain || '').toLowerCase();
-
-    /* Fail fast with a clear message. The server checks this again. */
-    if (domain && String(claims.hd || '').toLowerCase() !== domain) {
-      gateError('That is not a @' + domain + ' account, so it cannot file reports.');
-      offerAccountSwitch(claims.email);
-      return;
-    }
-
-    state.idToken = token;
-    state.user = { email: claims.email, name: claims.name };
-
-    var who = $('whoami');
-    who.hidden = false;
-    who.textContent = claims.email;
-    who.title = 'Signed in as ' + claims.email;
-
-    /* Prefill the manager field, but leave it editable — the person filing is
-       not always the manager who worked the shift. */
-    var mgr = $('manager');
-    if (!mgr.value.trim() && claims.name) mgr.value = claims.name;
-
-    showApp();
-  }
-
   function showApp() {
     $('authGate').hidden = true;
     document.querySelector('.shell').style.visibility = '';
@@ -846,20 +747,9 @@
     el.classList.add('gate-error');
   }
 
-  function decodeJwtPayload(token) {
-    try {
-      var part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-      var pad = part.length % 4 ? '='.repeat(4 - (part.length % 4)) : '';
-      return JSON.parse(decodeURIComponent(escape(atob(part + pad))));
-    } catch (e) {
-      return {};
-    }
-  }
-
   /* ------------------------------------------------------------------- POST */
 
   function postJSON(payload) {
-    if (state.idToken) payload.idToken = state.idToken;
     if (state.accessToken) payload.accessToken = state.accessToken;
     return fetch(CFG.endpoint, {
       method: 'POST',
@@ -964,7 +854,7 @@
       errors.push('Files are still uploading — wait for them to finish.');
     }
 
-    if (CFG.auth && CFG.auth.enabled && !state.idToken && !state.accessToken) {
+    if (CFG.auth && CFG.auth.enabled && !state.accessToken) {
       errors.push('You are not signed in. Reload and sign in with your work Google account.');
     }
 

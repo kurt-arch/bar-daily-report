@@ -357,6 +357,8 @@ input.invalid, textarea.invalid, select.invalid {
 
 .gate-button { display: flex; justify-content: center; min-height: 44px; }
 
+.gate-primary { width: 280px; }
+
 .gate-note {
   margin: 22px 0 0 !important;
   font-size: 12px;
