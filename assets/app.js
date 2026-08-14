@@ -711,6 +711,19 @@
     primary.textContent = 'Sign in with Google';
     primary.addEventListener('click', beginRedirectSignIn);
     $('gsiButton').appendChild(primary);
+
+    stampBuild();
+  }
+
+  /* Always visible: a cached build is otherwise indistinguishable from a
+     current one, and silently explains away every fix. */
+  var BUILD = 'v8';
+
+  function stampBuild() {
+    var tag = document.createElement('span');
+    tag.className = 'gate-build';
+    tag.textContent = 'build ' + BUILD;
+    $('gateNote').appendChild(tag);
   }
 
   /** Confirms the access token with the backend, which owns the domain check. */

@@ -796,3 +796,12 @@ input[type="file"]:hover { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+.gate-build {
+  display: block;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  letter-spacing: .03em;
+}
