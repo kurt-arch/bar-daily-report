@@ -732,13 +732,29 @@
         } else {
           state.accessToken = null;
           gateError((res && res.error) || 'That account cannot file reports.');
-          showTroubleshooting();
+          offerRetry();
         }
       })
       .catch(function (err) {
         state.accessToken = null;
-        gateError('Could not reach the server to confirm sign-in: ' + err.message);
+        console.error('[portal] account check failed', err);
+        gateError('Could not confirm sign-in: ' +
+          (err && err.message ? err.message : String(err)));
+        offerRetry();
       });
+  }
+
+  /** Always leave a way forward — never a dead card. */
+  function offerRetry() {
+    var note = $('gateNote');
+    var retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'gate-switch';
+    retry.textContent = 'Try signing in again';
+    retry.addEventListener('click', function () {
+      window.location.href = redirectUri();
+    });
+    note.appendChild(retry);
   }
 
   function showApp() {
@@ -756,16 +772,52 @@
 
   /* ------------------------------------------------------------------- POST */
 
+  /* Apps Script has no upper bound on how long it may take to answer, and a
+     hung request is indistinguishable from a frozen page. Fail loudly instead. */
+  var REQUEST_TIMEOUT_MS = 45000;
+
   function postJSON(payload) {
     if (state.accessToken) payload.accessToken = state.accessToken;
+
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = setTimeout(function () {
+      if (controller) controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+
+    return fetchWithTimeout(payload, controller).then(function (res) {
+      clearTimeout(timer);
+      return res;
+    }, function (err) {
+      clearTimeout(timer);
+      if (err && err.name === 'AbortError') {
+        throw new Error('the server did not respond within ' +
+          Math.round(REQUEST_TIMEOUT_MS / 1000) + ' seconds');
+      }
+      throw err;
+    });
+  }
+
+  function fetchWithTimeout(payload, controller) {
     return fetch(CFG.endpoint, {
       method: 'POST',
       /* text/plain keeps this a "simple" request: no CORS preflight, which
          Apps Script cannot answer. */
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
-      redirect: 'follow'
-    }).then(function (r) { return r.json(); });
+      redirect: 'follow',
+      signal: controller ? controller.signal : undefined
+    }).then(function (r) {
+      return r.text().then(function (text) {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          /* An HTML body here means Google intercepted the call — an expired
+             deployment or a sign-in page. Say so rather than "unexpected token". */
+          throw new Error('the server returned an unexpected response (HTTP ' +
+            r.status + '). The deployment may need redeploying.');
+        }
+      });
+    });
   }
 
   /* ------------------------------------------------------------------ draft */
