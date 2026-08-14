@@ -716,10 +716,21 @@
   /** Confirms the access token with the backend, which owns the domain check. */
   function verifyWithBackend() {
     var msg = $('gateMessage');
-    msg.textContent = 'Checking your account…';
     msg.classList.remove('gate-error');
 
+    /* A live counter distinguishes "still working" from "wedged", which a
+       static message cannot — and puts the elapsed time in any screenshot. */
+    var started = Date.now();
+    var ticker = setInterval(function () {
+      msg.textContent = 'Checking your account… (' +
+        Math.round((Date.now() - started) / 1000) + 's)';
+    }, 1000);
+    msg.textContent = 'Checking your account… (0s)';
+
+    var stop = function () { clearInterval(ticker); };
+
     postJSON({ action: 'whoami' })
+      .then(function (r) { stop(); return r; }, function (e) { stop(); throw e; })
       .then(function (res) {
         if (res && res.ok && res.email) {
           state.user = { email: res.email, name: res.name || '' };
@@ -738,15 +749,26 @@
       .catch(function (err) {
         state.accessToken = null;
         console.error('[portal] account check failed', err);
-        gateError('Could not confirm sign-in: ' +
-          (err && err.message ? err.message : String(err)));
-        offerRetry();
+        gateError('Could not confirm sign-in.');
+        offerRetry(
+          'build v7\n' +
+          'error: ' + (err && err.name ? err.name + ' — ' : '') +
+            (err && err.message ? err.message : String(err)) + '\n' +
+          'endpoint: ' + String(CFG.endpoint).slice(0, 60) + '…'
+        );
       });
   }
 
   /** Always leave a way forward — never a dead card. */
-  function offerRetry() {
+  function offerRetry(detail) {
     var note = $('gateNote');
+
+    if (detail) {
+      var pre = document.createElement('pre');
+      pre.className = 'gate-detail';
+      pre.textContent = detail;
+      note.appendChild(pre);
+    }
     var retry = document.createElement('button');
     retry.type = 'button';
     retry.className = 'gate-switch';
