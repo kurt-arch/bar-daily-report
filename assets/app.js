@@ -602,9 +602,16 @@
    * Apps Script on every write, so removing this overlay in devtools achieves
    * nothing. Decoding here is display-only — never trust it for authorisation.
    */
-  /** The page URL with no query or fragment — must match the registered URI. */
+  /**
+   * The page URL with no query or fragment, normalised to a single canonical
+   * form so exactly one value ever needs registering on the OAuth client.
+   * Google matches redirect URIs as exact strings, so a missing trailing slash
+   * or a visible index.html is enough to cause redirect_uri_mismatch.
+   */
   function redirectUri() {
-    return window.location.origin + window.location.pathname;
+    var path = window.location.pathname.replace(/index\.html$/i, '');
+    if (path.charAt(path.length - 1) !== '/') path += '/';
+    return window.location.origin + path;
   }
 
   /**
